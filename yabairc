@@ -1,33 +1,80 @@
-yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
-sudo yabai --load-sa
-yabai -m config debug_output on
+#!/usr/bin/env zsh
 
-yabai -m config layout bsp
-yabai -m config window_placement second_child
+declare -r SCRIPT_PATH=$0
 
-yabai -m config top_padding 6
-yabai -m config bottom_padding 6
-yabai -m config left_padding 6
-yabai -m config right_padding 6
-yabai -m config window_gap 6
+function determineAspectRatio {
+  case $(yabai -m query --displays --display mouse | jq '.frame | (.w)/(.h) | round') in
+    2) echo "16:9" ;;
+    4) echo "32:9" ;;
+    *) echo "notfound" ;;
+  esac
+}
 
-yabai -m config window_opacity on
-yabai -m config active_window_opacity 1.0
-yabai -m config normal_window_opacity 0.98
-yabai -m config window_shadow float
+function countVisibleNonFloatingWindows {
+  yabai -m query --windows --space mouse | \
+  jq '[.[] | select(.["is-visible"] and .["is-floating"] == false)] | length'
+}
 
-yabai -m config focus_follows_mouse autofocus
+function adjustPaddingBasedOnWindows {
+  if [[ $(determineAspectRatio) == "32:9" ]]; then
+    case $(countVisibleNonFloatingWindows) in
+      0|1) yabai -m space --padding abs:6:4:900:900 ;;
+      2) yabai -m space --padding abs:6:4:500:500 ;;
+      3|4) yabai -m space --padding abs:6:4:300:300 ;;
+      *) yabai -m space --padding abs:6:4:6:6 ;;
+    esac
+  else
+    yabai -m space --padding abs:6:4:4:4
+  fi
+}
 
-# Drag/resizes Windows with mouse
-yabai -m config mouse_modifier shift
-yabai -m config mouse_action1 move
-yabai -m config mouse_action2 resize
+function setupYabaiSignals {
+  for signal (
+    application_launched application_terminated
+    application_hidden application_visible
+    window_created window_destroyed window_minimized window_deminimized
+    space_changed
+    display_resized system_woke
+  ); do
+    yabai -m signal --add event=$signal \
+      action="$SCRIPT_PATH adjustPaddingBasedOnWindows" \
+      label="adjustPaddingBasedOnWindows-on-$signal"
+  done
+}
 
-# Window rules
-yabai -m rule --add app="^(Calculator|System Preferences|System Settings|Archive Utility|Finder)$" manage=off
-yabai -m rule --add title="^Preview" manage=off
-yabai -m rule --add title="^Preferences" manage=off
-yabai -m rule --add title="^Settings" manage=off
-yabai -m rule --add app="^Notes$" manage=off
-yabai -m rule --add app="^Weather$" manage=off
-yabai -m rule --add app="^QuickTime Player$" manage=off
+if [[ $# == 0 ]]; then
+  yabai -m signal --add event=dock_did_restart action="sudo yabai --load-sa"
+  sudo yabai --load-sa
+
+  yabai -m config debug_output on
+
+  yabai -m config layout bsp
+  yabai -m config window_placement second_child
+
+  yabai -m config window_gap 6
+
+  yabai -m config window_opacity off
+  yabai -m config window_shadow float
+
+  yabai -m config focus_follows_mouse off
+
+  # Drag/resizes Windows with mouse
+  yabai -m config mouse_modifier shift
+  yabai -m config mouse_action1 move
+  yabai -m config mouse_action2 resize
+
+  # Window rules
+  yabai -m rule --add app="^(Calculator|System Preferences|System Settings|Archive Utility|Finder)$" manage=off
+  yabai -m rule --add title="^Preview" manage=off
+  yabai -m rule --add title="^Preferences" manage=off
+  yabai -m rule --add title="^Settings" manage=off
+  yabai -m rule --add app="^Notes$" manage=off
+  yabai -m rule --add app="^Weather$" manage=off
+  yabai -m rule --add app="^QuickTime Player$" manage=off
+  yabai -m rule --add app="^JetBrains Toolbox$" manage=off
+
+  adjustPaddingBasedOnWindows
+  setupYabaiSignals
+else
+  $1
+fi
